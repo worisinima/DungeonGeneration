@@ -295,8 +295,8 @@ int main()
 	srand(0);
 
 	//只能是奇数
-	const int SizeX = 459;
-	const int SizeY = 459;
+	const int SizeX = 81;
+	const int SizeY = 81;
 	FImage* OutputImage = new FImage(SizeX, SizeY, "OutputImage");
 	
 	FDungeon* Dungeon = new FDungeon();
