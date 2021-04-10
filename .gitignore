@@ -30,3 +30,8 @@
 *.exe
 *.out
 *.app
+
+/Debug/
+/DungeonGeneration/Debug/
+/Build/x64/
+/.vs/
