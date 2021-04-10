@@ -108,9 +108,11 @@ namespace FileHelper
 
 enum class EDungeonType : char
 {
-	VE_Wall = 0,
-	VE_Space = 1,
-	VE_Gate = 2,
+	VE_Wall		= 0,
+	VE_Room		= 1,
+	VE_RoomWall	= 2,
+	VE_PassWay	= 3,
+	VE_Gate		= 4,
 };
 
 class FColor
@@ -132,6 +134,8 @@ public:
 	~FVector2D() {}
 	FVector2D operator+ (const FVector2D& Ref) { FVector2D ret; ret.X = this->X + Ref.X; ret.Y = this->Y + Ref.Y; return ret;}
 	FVector2D operator- (const FVector2D& Ref) { FVector2D ret; ret.X = this->X - Ref.X; ret.Y = this->Y - Ref.Y; return ret;}
+	FVector2D operator+ (const FVector2D& Ref)const { FVector2D ret; ret.X = this->X + Ref.X; ret.Y = this->Y + Ref.Y; return ret; }
+	FVector2D operator- (const FVector2D& Ref)const { FVector2D ret; ret.X = this->X - Ref.X; ret.Y = this->Y - Ref.Y; return ret; }
 	FVector2D operator* (const FVector2D& Ref){ FVector2D ret; ret.X = this->X * Ref.X; ret.Y = this->Y * Ref.Y; return ret;}
 	FVector2D operator* (const float& fval){ FVector2D ret; ret.X = this->X * fval; ret.Y = this->Y * fval; return ret;}
 	FVector2D operator/ (const FVector2D& Ref){ FVector2D ret; ret.X = this->X / Ref.X; ret.Y = this->Y / Ref.Y; return ret;}
@@ -222,7 +226,41 @@ public:
 
 struct FDungeon
 {
+	FDungeon() : DungeonSizeX(0), DungeonSizeY(0){}
+	FDungeon(const int& x, const int& y, const EDungeonType& inType) : DungeonSizeX(x), DungeonSizeY(y)
+	{
+		//初始化地下城，让地下城全部是墙
+		for (int y = 0; y < DungeonSizeY; y++)
+		{
+			vector<EDungeonType> yarray;
+			Data.push_back(std::move(yarray));
+			for (int x = 0; x < DungeonSizeX; x++)
+			{
+				Data[y].push_back(inType);
+			}
+		}
+	}
+
 	vector<vector<EDungeonType>> Data;
+	//只能是奇数
+	int DungeonSizeX;
+	int DungeonSizeY;
+};
+
+struct FRoom
+{
+
+	FRoom(){}
+	FRoom(const FVector2D& loc, const FVector2D& xyEx) : Location(loc), XYExtent(xyEx)
+	{
+		min = loc - xyEx;
+		max = loc + xyEx;
+	}
+
+	FVector2D Location;
+	FVector2D XYExtent;
+
+	FVector2D min, max;
 };
 
 float RandInRange(const int& min, const int& max)
@@ -288,6 +326,12 @@ void CrossFindPointOrigPointMap(const FVector2D& PointVal, const vector<vector<F
 		OutPoints->push_back((*OrigArrayMap)[PointInOrigArrayMap.X][PointInOrigArrayMap.Y + 1]);
 }
 
+//2D AABB box 相交测试，如果相交返回true，如果没有返回false
+bool IsAABB2DIntersect(const FVector2D& A_Min, const FVector2D& A_Max, const FVector2D& B_Min, const FVector2D& B_Max)
+{
+	return A_Min.X < B_Max.X&& A_Max.X > B_Min.X && A_Min.Y < B_Max.Y&& A_Max.Y > B_Min.Y;
+}
+
 int main()
 {
 	//初始化随机数种子
@@ -295,21 +339,11 @@ int main()
 	srand(0);
 
 	//只能是奇数
-	const int SizeX = 81;
-	const int SizeY = 81;
+	const int SizeX = 45;
+	const int SizeY = 45;
 	FImage* OutputImage = new FImage(SizeX, SizeY, "OutputImage");
 	
-	FDungeon* Dungeon = new FDungeon();
-	//初始化地下城，让地下城全部是墙
-	for (int y = 0; y < SizeY; y++)
-	{
-		vector<EDungeonType> yarray;
-		Dungeon->Data.push_back(std::move(yarray));
-		for (int x = 0; x < SizeX; x++)
-		{
-			Dungeon->Data[y].push_back(EDungeonType::VE_Wall);
-		}
-	}
+	FDungeon* Dungeon = new FDungeon(SizeX, SizeY, EDungeonType::VE_Wall);
 
 	//创建网格
 	vector<FVector2D>OrigPoint;
@@ -324,7 +358,7 @@ int main()
 			}
 			else if (x % 2 == 1)
 			{
-				Dungeon->Data[x][y] = EDungeonType::VE_Space;
+				Dungeon->Data[x][y] = EDungeonType::VE_PassWay;
 				OrigPoint.push_back(std::move(FVector2D(x, y)));
 			}
 			else if (y % 2 == 0)
@@ -334,7 +368,7 @@ int main()
 			}
 			else if (y % 2 == 1)
 			{
-				Dungeon->Data[x][y] = EDungeonType::VE_Space;
+				Dungeon->Data[x][y] = EDungeonType::VE_PassWay;
 				OrigPoint.push_back(std::move(FVector2D(x, y)));
 			}
 		}
@@ -413,7 +447,7 @@ int main()
 
 			FVector2D DestWallLoc = (CurrentPoint + SelectPoint) / FVector2D(2, 2);
 
-			Dungeon->Data[DestWallLoc.X][DestWallLoc.Y] = EDungeonType::VE_Space;
+			Dungeon->Data[DestWallLoc.X][DestWallLoc.Y] = EDungeonType::VE_PassWay;
 
 			LastPointArray->push_back(CurrentPoint);
 			CurrentPoint = SelectPoint;
@@ -425,15 +459,70 @@ int main()
 			break;
 	}
 	
+
+	const int CreateRoomAttempNum = 100;
+	const int RoomMaxSizeXExtent = 5;
+	const int RoomMaxSizeYExtent = 5;
+	vector<FRoom*>* AllRoom = new vector<FRoom*>();
+	for (int attemp = 0; attemp < CreateRoomAttempNum; attemp++)
+	{
+		int RoomXExtent = RandInRange(2, RoomMaxSizeXExtent);
+		int RoomYExtent = RandInRange(2, RoomMaxSizeYExtent);
+
+		const FVector2D& RoomLocation = FVector2D((int)RandInRange(0, SizeX - 1), (int)RandInRange(0, SizeY - 1));
+		if (
+			RoomLocation.X - RoomXExtent > 0 &&
+			RoomLocation.X + RoomXExtent < SizeX &&
+			RoomLocation.Y - RoomYExtent > 0 &&
+			RoomLocation.Y + RoomYExtent < SizeY)
+		{
+			FRoom* newRoom = new FRoom(RoomLocation, FVector2D(RoomXExtent, RoomYExtent));
+			bool bCanAdd = true;
+			for (const FRoom* room : *AllRoom)
+			{
+				const FVector2D& Room_A_Min = room->min;
+				const FVector2D& Room_A_Max = room->max;
+				const FVector2D& Room_B_Min = newRoom->min;
+				const FVector2D& Room_B_Max = newRoom->max;
+				if (IsAABB2DIntersect(Room_A_Min, Room_A_Max, Room_B_Min, Room_B_Max))
+				{
+					bCanAdd = false;
+				}
+			}
+			if (bCanAdd == true)
+				AllRoom->push_back(newRoom);
+		}
+	}
+	for (const FRoom* room : *AllRoom)
+	{
+		for (int y = room->min.Y; y <= room->max.Y; y++)
+		{
+			for (int x = room->min.X; x <= room->max.X; x++)
+			{
+				if (x == room->min.X || x == room->max.X || y == room->min.Y || y == room->max.Y)
+					Dungeon->Data[x][y] = EDungeonType::VE_RoomWall;
+				else
+					Dungeon->Data[x][y] = EDungeonType::VE_Room;
+			}
+		}
+	}
+
 	//渲染输出的图片
 	for (int y = 0; y < SizeY; y++)
 	{
 		for (int x = 0; x < SizeX; x++)
 		{
-			if(Dungeon->Data[x][y] == EDungeonType::VE_Wall)
+			if (Dungeon->Data[x][y] == EDungeonType::VE_Wall)
 				OutputImage->SetPixleColor(0, FVector2D(x, y));
-			else if(Dungeon->Data[x][y] == EDungeonType::VE_Space)
+
+			if (Dungeon->Data[x][y] == EDungeonType::VE_PassWay)
 				OutputImage->SetPixleColor(255, FVector2D(x, y));
+
+			if (Dungeon->Data[x][y] == EDungeonType::VE_Room)
+				OutputImage->SetPixleColor(FColor(0, 0, 255), FVector2D(x, y));
+
+			if (Dungeon->Data[x][y] == EDungeonType::VE_RoomWall)
+				OutputImage->SetPixleColor(FColor(0, 255, 0), FVector2D(x, y));
 		}
 	}
 
