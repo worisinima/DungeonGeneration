@@ -108,11 +108,12 @@ namespace FileHelper
 
 enum class EDungeonType : char
 {
-	VE_Wall		= 0,
-	VE_Room		= 1,
-	VE_RoomWall	= 2,
-	VE_PassWay	= 3,
-	VE_Gate		= 4,
+	VE_None		= 0,
+	VE_Wall		= 1,
+	VE_Room		= 2,
+	VE_RoomWall	= 3,
+	VE_PassWay	= 4,
+	VE_Door		= 5,
 };
 
 class FColor
@@ -239,6 +240,14 @@ struct FDungeon
 				Data[y].push_back(inType);
 			}
 		}
+	}
+
+	EDungeonType Get(const FVector2D& Loc)
+	{
+		if(Loc.X >= 0 && Loc.X < DungeonSizeX && Loc.Y >= 0 && Loc.Y <= DungeonSizeY)
+			return Data[Loc.X][Loc.Y];
+		else
+			return EDungeonType::VE_None;
 	}
 
 	vector<vector<EDungeonType>> Data;
@@ -399,6 +408,7 @@ int main()
 		}
 	}
 
+	//创建道路
 	//找到一个起始点
 	const FVector2D& StartPoint = OrigPoint[RandInRange(0, OrigPoint.size() - 1)];
 
@@ -459,7 +469,7 @@ int main()
 			break;
 	}
 	
-
+	//创建房间
 	const int CreateRoomAttempNum = 100;
 	const int RoomMaxSizeXExtent = 5;
 	const int RoomMaxSizeYExtent = 5;
@@ -493,19 +503,114 @@ int main()
 				AllRoom->push_back(newRoom);
 		}
 	}
+
+	//把每个房间的墙的位置保存下来，供以后开门用
+	vector<vector<FVector2D>*>* AllRoomWallLocation = new vector<vector<FVector2D>*>();
 	for (const FRoom* room : *AllRoom)
 	{
+		vector<FVector2D>* OneRoomWall = new vector<FVector2D>();
+		AllRoomWallLocation->push_back(OneRoomWall);
 		for (int y = room->min.Y; y <= room->max.Y; y++)
 		{
 			for (int x = room->min.X; x <= room->max.X; x++)
 			{
 				if (x == room->min.X || x == room->max.X || y == room->min.Y || y == room->max.Y)
+				{
 					Dungeon->Data[x][y] = EDungeonType::VE_RoomWall;
+					OneRoomWall->push_back(FVector2D(x, y));
+				}
 				else
 					Dungeon->Data[x][y] = EDungeonType::VE_Room;
 			}
 		}
 	}
+
+	//开门
+	//房间的上下左右wall
+	vector<FVector2D>* TopWall = new vector<FVector2D>();
+	vector<FVector2D>* DownWall = new vector<FVector2D>();
+	vector<FVector2D>* LeftWall = new vector<FVector2D>();
+	vector<FVector2D>* RightWall = new vector<FVector2D>();
+	for (const vector<FVector2D>* SingleRoomWall : *AllRoomWallLocation)
+	{
+		TopWall->clear();
+		DownWall->clear();
+		LeftWall->clear();
+		RightWall->clear();
+		for (const FVector2D& roomWall : *SingleRoomWall)
+		{
+			const FVector2D& uLoc = roomWall + FVector2D(0, 1);
+			const FVector2D& dLoc = roomWall + FVector2D(0, -1);
+			const FVector2D& lLoc = roomWall + FVector2D(-1, 0);
+			const FVector2D& rLoc = roomWall + FVector2D(1, 0);
+
+			//top
+			if (
+				Dungeon->Get(uLoc) == EDungeonType::VE_PassWay &&
+				Dungeon->Get(dLoc) == EDungeonType::VE_Room && 
+				Dungeon->Get(lLoc) == EDungeonType::VE_RoomWall&&
+				Dungeon->Get(rLoc) == EDungeonType::VE_RoomWall
+			)
+			{
+				TopWall->push_back(roomWall);
+			}
+			//down
+			if (
+				Dungeon->Get(uLoc) == EDungeonType::VE_Room &&
+				Dungeon->Get(dLoc) == EDungeonType::VE_PassWay &&
+				Dungeon->Get(lLoc) == EDungeonType::VE_RoomWall &&
+				Dungeon->Get(rLoc) == EDungeonType::VE_RoomWall
+				)
+			{
+				DownWall->push_back(roomWall);
+			}
+			//left
+			if (
+				Dungeon->Get(uLoc) == EDungeonType::VE_RoomWall &&
+				Dungeon->Get(dLoc) == EDungeonType::VE_RoomWall &&
+				Dungeon->Get(lLoc) == EDungeonType::VE_PassWay &&
+				Dungeon->Get(rLoc) == EDungeonType::VE_Room
+				)
+			{
+				LeftWall->push_back(roomWall);
+			}
+			//Right
+			if (
+				Dungeon->Get(uLoc) == EDungeonType::VE_RoomWall &&
+				Dungeon->Get(dLoc) == EDungeonType::VE_RoomWall &&
+				Dungeon->Get(lLoc) == EDungeonType::VE_Room &&
+				Dungeon->Get(rLoc) == EDungeonType::VE_PassWay
+				)
+			{
+				RightWall->push_back(roomWall);
+			}
+		}
+		if (TopWall->size() > 0)
+		{
+			const int& id = (int)RandInRange(0, TopWall->size() - 1);
+			const FVector2D& DoorLoc = (*TopWall)[id];
+			Dungeon->Data[DoorLoc.X][DoorLoc.Y] = EDungeonType::VE_Door;
+		}
+		if (DownWall->size() > 0)
+		{
+			const int& id = (int)RandInRange(0, DownWall->size() - 1);
+			const FVector2D& DoorLoc = (*DownWall)[id];
+			Dungeon->Data[DoorLoc.X][DoorLoc.Y] = EDungeonType::VE_Door;
+		}
+		if (LeftWall->size() > 0)
+		{
+			const int& id = (int)RandInRange(0, LeftWall->size() - 1);
+			const FVector2D& DoorLoc = (*LeftWall)[id];
+			Dungeon->Data[DoorLoc.X][DoorLoc.Y] = EDungeonType::VE_Door;
+		}
+		if (RightWall->size() > 0)
+		{
+			const int& id = (int)RandInRange(0, RightWall->size() - 1);
+			const FVector2D& DoorLoc = (*RightWall)[id];
+			Dungeon->Data[DoorLoc.X][DoorLoc.Y] = EDungeonType::VE_Door;
+		}
+	}
+	
 
 	//渲染输出的图片
 	for (int y = 0; y < SizeY; y++)
@@ -523,6 +628,9 @@ int main()
 
 			if (Dungeon->Data[x][y] == EDungeonType::VE_RoomWall)
 				OutputImage->SetPixleColor(FColor(0, 255, 0), FVector2D(x, y));
+
+			if (Dungeon->Data[x][y] == EDungeonType::VE_Door)
+				OutputImage->SetPixleColor(FColor(255, 0, 0), FVector2D(x, y));
 		}
 	}
 
