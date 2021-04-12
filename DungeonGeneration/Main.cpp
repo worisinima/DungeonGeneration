@@ -108,12 +108,17 @@ namespace FileHelper
 
 enum class EDungeonType : char
 {
-	VE_None		= 0,
-	VE_Wall		= 1,
-	VE_Room		= 2,
-	VE_RoomWall	= 3,
-	VE_PassWay	= 4,
-	VE_Door		= 5,
+	VE_None = 0,
+	VE_Wall,
+	VE_RoomWall,
+	VE_Room,
+	VE_PassWay,
+	VE_Door,
+};
+enum class ESlotMovementState : char
+{
+	MS_Forward,
+	MS_Backward
 };
 
 class FColor
@@ -227,7 +232,7 @@ public:
 
 struct FDungeon
 {
-	FDungeon() : DungeonSizeX(0), DungeonSizeY(0){}
+	FDungeon() : DungeonSizeX(0), DungeonSizeY(0), OutputImage(nullptr){}
 	FDungeon(const int& x, const int& y, const EDungeonType& inType) : DungeonSizeX(x), DungeonSizeY(y)
 	{
 		//初始化地下城，让地下城全部是墙
@@ -240,9 +245,11 @@ struct FDungeon
 				Data[y].push_back(inType);
 			}
 		}
+
+		OutputImage = new FImage(DungeonSizeX, DungeonSizeY, "OutputImage");
 	}
 
-	EDungeonType Get(const FVector2D& Loc)
+	EDungeonType Get(const FVector2D& Loc) const
 	{
 		if(Loc.X >= 0 && Loc.X < DungeonSizeX && Loc.Y >= 0 && Loc.Y <= DungeonSizeY)
 			return Data[Loc.X][Loc.Y];
@@ -254,6 +261,8 @@ struct FDungeon
 	//只能是奇数
 	int DungeonSizeX;
 	int DungeonSizeY;
+
+	FImage* OutputImage;
 };
 
 struct FRoom
@@ -301,44 +310,95 @@ FVector2D GetRandDirection()
 	return ret;
 }
 
-void CrossFindPointOrigPointMap(const FVector2D& PointVal, const vector<vector<FVector2D>>* OrigArrayMap, vector<FVector2D>* OutPoints)
+void LookingForPotentialPoints(const FVector2D& CurrentPoint, const FDungeon* Dungon, vector<FVector2D>& OutPotentialPoints)
 {
 	//PointVal是顶点在整个网格里的位置
-	int SizeX = OrigArrayMap[0].size();
-	int SizeY = OrigArrayMap->size();
+	const int& SizeX = Dungon->DungeonSizeX;
+	const int& SizeY = Dungon->DungeonSizeY;
+	const int x = CurrentPoint.X;
+	const int y = CurrentPoint.Y;
 
-	//找到PointVal在OrigArrayMap里的位置
-	FVector2D PointInOrigArrayMap;
-	for (int y = 0; y < SizeY; y++)
-	{
-		bool bBreak = false;
-		for (int x = 0; x < SizeX; x++)
-		{
-			if ((*OrigArrayMap)[x][y] == PointVal)
-			{
-				PointInOrigArrayMap.X = x;
-				PointInOrigArrayMap.Y = y;
-				bBreak = true;
-				break;
-			}
-		}
-		if (bBreak) break;
-	}
+	if (y + 2 < SizeY && Dungon->Get(FVector2D(x, y + 2)) == EDungeonType::VE_PassWay)
+		OutPotentialPoints.push_back(FVector2D(x, y + 2));
 
-	if(PointInOrigArrayMap.X - 1 >= 0)
-		OutPoints->push_back((*OrigArrayMap)[PointInOrigArrayMap.X - 1][PointInOrigArrayMap.Y]);
-	if (PointInOrigArrayMap.X + 1 < SizeX)
-		OutPoints->push_back((*OrigArrayMap)[PointInOrigArrayMap.X + 1][PointInOrigArrayMap.Y]);
-	if (PointInOrigArrayMap.Y - 1 >= 0)
-		OutPoints->push_back((*OrigArrayMap)[PointInOrigArrayMap.X][PointInOrigArrayMap.Y - 1]);
-	if (PointInOrigArrayMap.Y + 1 < SizeY)
-		OutPoints->push_back((*OrigArrayMap)[PointInOrigArrayMap.X][PointInOrigArrayMap.Y + 1]);
+	if (y - 2 > 0 && Dungon->Get(FVector2D(x, y - 2)) == EDungeonType::VE_PassWay)
+		OutPotentialPoints.push_back(FVector2D(x, y - 2));
+
+	if (x - 2 > 0 && Dungon->Get(FVector2D(x - 2, y)) == EDungeonType::VE_PassWay)
+		OutPotentialPoints.push_back(FVector2D(x - 2, y));
+
+	if (x + 2 < SizeX && Dungon->Get(FVector2D(x + 2, y)) == EDungeonType::VE_PassWay)
+		OutPotentialPoints.push_back(FVector2D(x + 2, y));
+
+}
+
+bool HaveFindDoorAround(const FVector2D& CurrentPoint, const FDungeon* Dungon)
+{
+	//PointVal是顶点在整个网格里的位置
+	const int& SizeX = Dungon->DungeonSizeX;
+	const int& SizeY = Dungon->DungeonSizeY;
+	const int x = CurrentPoint.X;
+	const int y = CurrentPoint.Y;
+
+	if (y + 1 < SizeY && Dungon->Get(FVector2D(x, y + 1)) == EDungeonType::VE_Door)
+		return true;
+
+	if (y - 1 > 0 && Dungon->Get(FVector2D(x, y - 1)) == EDungeonType::VE_Door)
+		return true;
+
+	if (x - 1 > 0 && Dungon->Get(FVector2D(x - 1, y)) == EDungeonType::VE_Door)
+		return true;
+
+	if (x + 1 < SizeX && Dungon->Get(FVector2D(x + 1, y)) == EDungeonType::VE_Door)
+		return true;
+
+	return false;
 }
 
 //2D AABB box 相交测试，如果相交返回true，如果没有返回false
 bool IsAABB2DIntersect(const FVector2D& A_Min, const FVector2D& A_Max, const FVector2D& B_Min, const FVector2D& B_Max)
 {
 	return A_Min.X < B_Max.X&& A_Max.X > B_Min.X && A_Min.Y < B_Max.Y&& A_Max.Y > B_Min.Y;
+}
+
+void RenderDungeon(FDungeon* Dungeon)
+{
+	const int SizeY = Dungeon->DungeonSizeX;
+	const int SizeX = Dungeon->DungeonSizeX;
+
+	//渲染输出的图片
+	for (int y = 0; y < SizeY; y++)
+	{
+		for (int x = 0; x < SizeX; x++)
+		{
+			switch (Dungeon->Data[x][y])
+			{
+			case EDungeonType::VE_None:
+				Dungeon->OutputImage->SetPixleColor(255, FVector2D(x, y));
+				break;
+			case EDungeonType::VE_Wall:
+				Dungeon->OutputImage->SetPixleColor(0, FVector2D(x, y));
+				break;
+			case EDungeonType::VE_RoomWall:
+				Dungeon->OutputImage->SetPixleColor(0, FVector2D(x, y));
+				break;
+			case EDungeonType::VE_Room:
+				Dungeon->OutputImage->SetPixleColor(FColor(0, 0, 255), FVector2D(x, y));
+				break;
+			case EDungeonType::VE_Door:
+				Dungeon->OutputImage->SetPixleColor(FColor(255, 0, 0), FVector2D(x, y));
+				break;
+			case EDungeonType::VE_PassWay:
+				Dungeon->OutputImage->SetPixleColor(255, FVector2D(x, y));
+				break;
+			default:
+				Dungeon->OutputImage->SetPixleColor(255, FVector2D(x, y));
+				break;
+			}
+		}
+	}
+
+	Dungeon->OutputImage->SaveImageToDesk();
 }
 
 int main()
@@ -348,33 +408,32 @@ int main()
 	srand(0);
 
 	//只能是奇数
-	const int SizeX = 81;
 	const int SizeY = 81;
-	FImage* OutputImage = new FImage(SizeX, SizeY, "OutputImage");
-	FDungeon* Dungeon = new FDungeon(SizeX, SizeY, EDungeonType::VE_Wall);
+	const int SizeX = 81;
+	FDungeon* Dungeon = new FDungeon(SizeX, SizeY, EDungeonType::VE_PassWay);
+	
+	//生成最边缘的墙体
+	for (int y = 0; y < SizeY; y++)
+	{
+		for (int x = 0; x < SizeX; x++)
+		{
+			if(y == 0 || y == SizeY - 1 || x == 0 || x == SizeX - 1)
+				Dungeon->Data[x][y] = EDungeonType::VE_Wall;
+		}
+	}
 
 	//创建网格
 	vector<FVector2D>OrigPoint;
-	for (int y = 1; y < SizeY; y+=2)
+	for (int y = 0; y < SizeY; y ++)
 	{
-		for (int x = 1; x < SizeX; x+=2)
+		for (int x = 0; x < SizeX; x ++)
 		{
-			if (x % 2 == 0)
-			{
-				Dungeon->Data[x][y] = EDungeonType::VE_Wall;
-				OrigPoint.push_back(std::move(FVector2D(x,y)));
-			}
-			else if (x % 2 == 1)
-			{
-				Dungeon->Data[x][y] = EDungeonType::VE_PassWay;
-				OrigPoint.push_back(std::move(FVector2D(x, y)));
-			}
-			else if (y % 2 == 0)
+			if (x % 2 == 0 || y % 2 == 0)
 			{
 				Dungeon->Data[x][y] = EDungeonType::VE_Wall;
 				OrigPoint.push_back(std::move(FVector2D(x, y)));
 			}
-			else if (y % 2 == 1)
+			else if(x % 2 == 1 || y % 2 == 1)
 			{
 				Dungeon->Data[x][y] = EDungeonType::VE_PassWay;
 				OrigPoint.push_back(std::move(FVector2D(x, y)));
@@ -382,108 +441,27 @@ int main()
 		}
 	}
 
-	//把起始格子的空白格子的位置放到二维数组里
-	vector<vector<FVector2D>>* OrigPointMap = new vector<vector<FVector2D>>();
-	float OX = OrigPoint[0].X;
-	float OY = OrigPoint[0].Y;
-	int YIndex = 0;
-	for (const FVector2D& p : OrigPoint)
-	{
-		if (p.X == OX)
-		{
-			vector<FVector2D> yarray;
-			OrigPointMap->push_back(std::move(yarray));
-		}
-
-		if (p.Y == OY)
-		{
-			(*OrigPointMap)[YIndex].push_back(p);
-		}
-		else
-		{
-			YIndex++;
-			OY = p.Y;
-			(*OrigPointMap)[YIndex].push_back(p);
-		}
-	}
-
-	//创建道路
-	//找到一个起始点
-	const FVector2D& StartPoint = OrigPoint[RandInRange(0, OrigPoint.size() - 1)];
-
-	vector<FVector2D>* UsedPointList = new vector<FVector2D>();
-	vector<FVector2D>* ToBeUsePointList = new vector<FVector2D>();
-	FVector2D CurrentPoint = StartPoint;
-	vector<FVector2D>* LastPointArray = new vector<FVector2D>();
-
-	bool bFinish = false;
-	while (true)
-	{
-		UsedPointList->push_back(CurrentPoint);
-		ToBeUsePointList->clear();
-		CrossFindPointOrigPointMap(CurrentPoint, OrigPointMap, ToBeUsePointList);
-
-		vector<FVector2D>CanBeUsedPointList;
-		for (const FVector2D& ToBeP : *ToBeUsePointList)
-		{
-			bool bCanUse = true;
-			for (const FVector2D& UsedP : *UsedPointList)
-			{
-				if (UsedP == ToBeP)
-					bCanUse = false;
-			}
-
-			if (bCanUse == true)
-				CanBeUsedPointList.push_back(ToBeP);
-		}
-
-		if (CanBeUsedPointList.size() == 0)
-		{
-			if (LastPointArray->size() != 0)
-			{
-				CurrentPoint = (*LastPointArray)[LastPointArray->size() - 1];
-				LastPointArray->pop_back();
-			}
-			else
-			{
-				bFinish = true;
-			}
-		}
-		else
-		{
-			int CanBeUsedPointNumber = CanBeUsedPointList.size();
-			FVector2D SelectPoint = CanBeUsedPointList[RandInRange(0, CanBeUsedPointList.size() - 1)];
-
-			FVector2D DestWallLoc = (CurrentPoint + SelectPoint) / FVector2D(2, 2);
-
-			Dungeon->Data[DestWallLoc.X][DestWallLoc.Y] = EDungeonType::VE_PassWay;
-
-			LastPointArray->push_back(CurrentPoint);
-			CurrentPoint = SelectPoint;
-		}
-
-		CurrentPoint.Print();
-
-		if (bFinish == true)
-			break;
-	}
-	
 	//创建房间
-	const int CreateRoomAttempNum = 100;
-	const int RoomMaxSizeXExtent = 5;
-	const int RoomMaxSizeYExtent = 5;
+	const int CreateRoomAttempNum = 1000;
+	const int RoomMaxSizeXExtent = 6;
+	const int RoomMaxSizeYExtent = 6;
 	vector<FRoom*>* AllRoom = new vector<FRoom*>();
 	for (int attemp = 0; attemp < CreateRoomAttempNum; attemp++)
 	{
-		int RoomXExtent = RandInRange(2, RoomMaxSizeXExtent);
-		int RoomYExtent = RandInRange(2, RoomMaxSizeYExtent);
+		int RoomXExtent = RandInRange(4, RoomMaxSizeXExtent);
+		int RoomYExtent = RandInRange(4, RoomMaxSizeYExtent);
+		RoomXExtent = RoomXExtent % 2 == 1 ? RoomXExtent : RoomXExtent - 1;
+		RoomYExtent = RoomYExtent % 2 == 1 ? RoomYExtent : RoomYExtent - 1;
 
 		const FVector2D& RoomLocation = FVector2D((int)RandInRange(0, SizeX - 1), (int)RandInRange(0, SizeY - 1));
 		if (
 			RoomLocation.X - RoomXExtent > 0 &&
-			RoomLocation.X + RoomXExtent < SizeX &&
+			RoomLocation.X + RoomXExtent < SizeX - 1 &&
 			RoomLocation.Y - RoomYExtent > 0 &&
-			RoomLocation.Y + RoomYExtent < SizeY)
+			RoomLocation.Y + RoomYExtent < SizeY - 1 &&
+			(int)RoomLocation.X % 2 == 1 &&
+			(int)RoomLocation.Y % 2 == 1
+		)
 		{
 			FRoom* newRoom = new FRoom(RoomLocation, FVector2D(RoomXExtent, RoomYExtent));
 			bool bCanAdd = true;
@@ -502,13 +480,11 @@ int main()
 				AllRoom->push_back(newRoom);
 		}
 	}
-
-	//把每个房间的墙的位置保存下来，供以后开门用
-	vector<vector<FVector2D>*>* AllRoomWallLocation = new vector<vector<FVector2D>*>();
+	vector<vector<FVector2D>*>* WallListOfEachRoom = new vector<vector<FVector2D>*>();
 	for (const FRoom* room : *AllRoom)
 	{
-		vector<FVector2D>* OneRoomWall = new vector<FVector2D>();
-		AllRoomWallLocation->push_back(OneRoomWall);
+		vector<FVector2D>* RoomWall = new vector<FVector2D>();
+		WallListOfEachRoom->push_back(RoomWall);
 		for (int y = room->min.Y; y <= room->max.Y; y++)
 		{
 			for (int x = room->min.X; x <= room->max.X; x++)
@@ -516,7 +492,7 @@ int main()
 				if (x == room->min.X || x == room->max.X || y == room->min.Y || y == room->max.Y)
 				{
 					Dungeon->Data[x][y] = EDungeonType::VE_RoomWall;
-					OneRoomWall->push_back(FVector2D(x, y));
+					RoomWall->push_back(FVector2D(x, y));
 				}
 				else
 					Dungeon->Data[x][y] = EDungeonType::VE_Room;
@@ -524,19 +500,150 @@ int main()
 		}
 	}
 
-	//开门
-	//房间的上下左右wall
+	//寻找一个寻路的迭代起始点
+	vector<FVector2D>* AllPasswayLoc = new vector<FVector2D>();
+	for (int y = 0; y < SizeY; y++)
+	{
+		for (int x = 0; x < SizeX; x++)
+		{
+			if(Dungeon->Data[x][y] == EDungeonType::VE_PassWay)
+				AllPasswayLoc->push_back(FVector2D(x, y));
+		}
+	}
+	const FVector2D& StartPoint = (*AllPasswayLoc)[RandInRange(0, AllPasswayLoc->size() - 1)];
+	FVector2D CurrentPoint = StartPoint;
+	FVector2D LastPoint = CurrentPoint;
+
+	vector<FVector2D>* UsedPointList = new vector<FVector2D>();
+	vector<FVector2D>* LastPointList = new vector<FVector2D>();
+
+	ESlotMovementState CurrentMovementState = ESlotMovementState::MS_Forward;
+	ESlotMovementState LastMovementState = ESlotMovementState::MS_Forward;
+	vector<FVector2D>* CurrentBackRoadPtr = nullptr;
+	vector<vector<FVector2D>*>* DeadEndRoadList = new vector<vector<FVector2D>*>();
+
+	bool bFinish = false;
+	while (true)
+	{
+		//寻找周围潜在的移动点
+		vector<FVector2D> ProtentialPointList;
+		ProtentialPointList.clear();
+		UsedPointList->push_back(CurrentPoint);
+		LookingForPotentialPoints(CurrentPoint, Dungeon, ProtentialPointList);
+
+		//在周围的潜在移动点中寻找没有被走过的点
+		vector<FVector2D>CanBeUsedPointList;
+		for (const FVector2D& ToBeP : ProtentialPointList)
+		{
+			bool bCanUse = true;
+			for (const FVector2D& UsedP : *UsedPointList)
+			{
+				if (UsedP == ToBeP)
+					bCanUse = false;
+			}
+
+			if (bCanUse == true)
+				CanBeUsedPointList.push_back(ToBeP);
+		}
+
+		//如果当前点周围没有可以使用的移动点说明移动到了死胡同，那么就往回退
+		if (CanBeUsedPointList.size() == 0)
+		{
+			CurrentMovementState = ESlotMovementState::MS_Backward;
+
+			if (LastPointList->size() != 0)
+			{
+				LastPoint = CurrentPoint;
+				CurrentPoint = (*LastPointList)[LastPointList->size() - 1];
+				LastPointList->pop_back();
+			}
+			else
+			{
+				bFinish = true;
+			}
+		}
+		//如果当前点周围有可以使用的移动点，那么就随机选取一个点移动过去
+		else
+		{
+			CurrentMovementState = ESlotMovementState::MS_Forward;
+
+			int CanBeUsedPointNumber = CanBeUsedPointList.size();
+			FVector2D SelectPoint = CanBeUsedPointList[RandInRange(0, CanBeUsedPointList.size() - 1)];
+
+			FVector2D DestWallLoc = (CurrentPoint + SelectPoint) / FVector2D(2, 2);
+
+			Dungeon->Data[DestWallLoc.X][DestWallLoc.Y] = EDungeonType::VE_PassWay;
+
+			LastPointList->push_back(CurrentPoint);
+			LastPoint = CurrentPoint;
+			CurrentPoint = SelectPoint;
+		}
+
+		if (CurrentMovementState == ESlotMovementState::MS_Forward && LastMovementState == ESlotMovementState::MS_Forward)
+		{
+			//什么事情也不会发生
+		}
+		else if (CurrentMovementState == ESlotMovementState::MS_Backward && LastMovementState == ESlotMovementState::MS_Forward)
+		{
+			//第一次倒退，开始创建倒退列表
+			vector<FVector2D>* BackRoad = new vector<FVector2D>();
+			CurrentBackRoadPtr = BackRoad;
+			CurrentBackRoadPtr->push_back(LastPoint);
+			
+			FVector2D MoveDir = (CurrentPoint - LastPoint) / 2.0f;
+			FVector2D RoadMidLoc = LastPoint + MoveDir;
+			CurrentBackRoadPtr->push_back(RoadMidLoc);
+
+			CurrentBackRoadPtr->push_back(CurrentPoint);
+
+			DeadEndRoadList->push_back(CurrentBackRoadPtr);
+		}
+		else if (CurrentMovementState == ESlotMovementState::MS_Backward && LastMovementState == ESlotMovementState::MS_Backward)
+		{
+			//在倒退途中
+			if (CurrentBackRoadPtr != nullptr)
+			{
+				FVector2D MoveDir = (CurrentPoint - LastPoint) / 2.0f;
+				FVector2D RoadMidLoc = LastPoint + MoveDir;
+				CurrentBackRoadPtr->push_back(RoadMidLoc);
+
+				CurrentBackRoadPtr->push_back(CurrentPoint);
+			}
+		}
+		else if (CurrentMovementState == ESlotMovementState::MS_Forward && LastMovementState == ESlotMovementState::MS_Backward)
+		{
+			//终止倒退
+			CurrentBackRoadPtr->push_back(LastPoint);
+
+			FVector2D MoveDir = (CurrentPoint - LastPoint) / 2.0f;
+			FVector2D RoadMidLoc = LastPoint + MoveDir;
+			CurrentBackRoadPtr->push_back(RoadMidLoc);
+
+			CurrentBackRoadPtr = nullptr;
+		}
+
+		//打印当前点的位置
+		CurrentPoint.Print();
+
+		LastMovementState = CurrentMovementState;
+
+		//完成迭代跳出循环
+		if (bFinish == true)
+			break;
+	}
+
 	vector<FVector2D>* TopWall = new vector<FVector2D>();
 	vector<FVector2D>* DownWall = new vector<FVector2D>();
 	vector<FVector2D>* LeftWall = new vector<FVector2D>();
 	vector<FVector2D>* RightWall = new vector<FVector2D>();
-	for (const vector<FVector2D>* SingleRoomWall : *AllRoomWallLocation)
+	for (const vector<FVector2D>* Roomwall : *WallListOfEachRoom)
 	{
 		TopWall->clear();
 		DownWall->clear();
 		LeftWall->clear();
 		RightWall->clear();
-		for (const FVector2D& roomWallLoc : *SingleRoomWall)
+
+		for (const FVector2D& roomWallLoc : *Roomwall)
 		{
 			const FVector2D& uLoc = roomWallLoc + FVector2D(0, 1);
 			const FVector2D& dLoc = roomWallLoc + FVector2D(0, -1);
@@ -546,10 +653,10 @@ int main()
 			//top
 			if (
 				Dungeon->Get(uLoc) == EDungeonType::VE_PassWay &&
-				Dungeon->Get(dLoc) == EDungeonType::VE_Room && 
-				Dungeon->Get(lLoc) == EDungeonType::VE_RoomWall&&
+				Dungeon->Get(dLoc) == EDungeonType::VE_Room &&
+				Dungeon->Get(lLoc) == EDungeonType::VE_RoomWall &&
 				Dungeon->Get(rLoc) == EDungeonType::VE_RoomWall
-			)
+				)
 			{
 				TopWall->push_back(roomWallLoc);
 			}
@@ -610,29 +717,27 @@ int main()
 		}
 	}
 
-	//渲染输出的图片
-	for (int y = 0; y < SizeY; y++)
+	//修剪支路死路
+	const int RoadCutDepth = 10;
+	for (const vector<FVector2D>* road : *DeadEndRoadList)
 	{
-		for (int x = 0; x < SizeX; x++)
+		for (int depth = 0; depth < RoadCutDepth; depth++)
 		{
-			if (Dungeon->Data[x][y] == EDungeonType::VE_Wall)
-				OutputImage->SetPixleColor(0, FVector2D(x, y));
+			if (depth < road->size())
+			{
+				const vector<FVector2D>& roaddata = *road;
 
-			if (Dungeon->Data[x][y] == EDungeonType::VE_PassWay)
-				OutputImage->SetPixleColor(255, FVector2D(x, y));
+				//查看一下周围是不是有门，如果有的话就不能封路了
+				if (HaveFindDoorAround(roaddata[depth], Dungeon) == true)
+					break;
 
-			if (Dungeon->Data[x][y] == EDungeonType::VE_Room)
-				OutputImage->SetPixleColor(FColor(0, 0, 255), FVector2D(x, y));
-
-			if (Dungeon->Data[x][y] == EDungeonType::VE_RoomWall)
-				OutputImage->SetPixleColor(FColor(0, 255, 0), FVector2D(x, y));
-
-			if (Dungeon->Data[x][y] == EDungeonType::VE_Door)
-				OutputImage->SetPixleColor(FColor(255, 0, 0), FVector2D(x, y));
+				Dungeon->Data[roaddata[depth].X][roaddata[depth].Y] = EDungeonType::VE_Wall;
+			}
 		}
 	}
 
-	OutputImage->SaveImageToDesk();
+	//渲染整个地下城，渲染结果会被存到桌面
+	RenderDungeon(Dungeon);
 
 	return 0;
 }
