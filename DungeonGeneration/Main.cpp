@@ -348,10 +348,9 @@ int main()
 	srand(0);
 
 	//只能是奇数
-	const int SizeX = 45;
-	const int SizeY = 45;
+	const int SizeX = 81;
+	const int SizeY = 81;
 	FImage* OutputImage = new FImage(SizeX, SizeY, "OutputImage");
-	
 	FDungeon* Dungeon = new FDungeon(SizeX, SizeY, EDungeonType::VE_Wall);
 
 	//创建网格
@@ -537,12 +536,12 @@ int main()
 		DownWall->clear();
 		LeftWall->clear();
 		RightWall->clear();
-		for (const FVector2D& roomWall : *SingleRoomWall)
+		for (const FVector2D& roomWallLoc : *SingleRoomWall)
 		{
-			const FVector2D& uLoc = roomWall + FVector2D(0, 1);
-			const FVector2D& dLoc = roomWall + FVector2D(0, -1);
-			const FVector2D& lLoc = roomWall + FVector2D(-1, 0);
-			const FVector2D& rLoc = roomWall + FVector2D(1, 0);
+			const FVector2D& uLoc = roomWallLoc + FVector2D(0, 1);
+			const FVector2D& dLoc = roomWallLoc + FVector2D(0, -1);
+			const FVector2D& lLoc = roomWallLoc + FVector2D(-1, 0);
+			const FVector2D& rLoc = roomWallLoc + FVector2D(1, 0);
 
 			//top
 			if (
@@ -552,7 +551,7 @@ int main()
 				Dungeon->Get(rLoc) == EDungeonType::VE_RoomWall
 			)
 			{
-				TopWall->push_back(roomWall);
+				TopWall->push_back(roomWallLoc);
 			}
 			//down
 			if (
@@ -562,7 +561,7 @@ int main()
 				Dungeon->Get(rLoc) == EDungeonType::VE_RoomWall
 				)
 			{
-				DownWall->push_back(roomWall);
+				DownWall->push_back(roomWallLoc);
 			}
 			//left
 			if (
@@ -572,7 +571,7 @@ int main()
 				Dungeon->Get(rLoc) == EDungeonType::VE_Room
 				)
 			{
-				LeftWall->push_back(roomWall);
+				LeftWall->push_back(roomWallLoc);
 			}
 			//Right
 			if (
@@ -582,7 +581,7 @@ int main()
 				Dungeon->Get(rLoc) == EDungeonType::VE_PassWay
 				)
 			{
-				RightWall->push_back(roomWall);
+				RightWall->push_back(roomWallLoc);
 			}
 		}
 		if (TopWall->size() > 0)
@@ -610,7 +609,6 @@ int main()
 			Dungeon->Data[DoorLoc.X][DoorLoc.Y] = EDungeonType::VE_Door;
 		}
 	}
-	
 
 	//渲染输出的图片
 	for (int y = 0; y < SizeY; y++)
