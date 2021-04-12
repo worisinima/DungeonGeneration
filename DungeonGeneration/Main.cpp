@@ -332,7 +332,7 @@ void LookingForPotentialPoints(const FVector2D& CurrentPoint, const FDungeon* Du
 
 }
 
-bool HaveFindDoorAround(const FVector2D& CurrentPoint, const FDungeon* Dungon)
+void FindDoorAround(const FVector2D& CurrentPoint, const FDungeon* Dungon, vector<EDungeonType>& outArroundTypeList)
 {
 	//PointVal是顶点在整个网格里的位置
 	const int& SizeX = Dungon->DungeonSizeX;
@@ -340,19 +340,17 @@ bool HaveFindDoorAround(const FVector2D& CurrentPoint, const FDungeon* Dungon)
 	const int x = CurrentPoint.X;
 	const int y = CurrentPoint.Y;
 
-	if (y + 1 < SizeY && Dungon->Get(FVector2D(x, y + 1)) == EDungeonType::VE_Door)
-		return true;
+	if (y + 1 < SizeY)
+		outArroundTypeList.push_back(Dungon->Get(FVector2D(x, y + 1)));
 
-	if (y - 1 > 0 && Dungon->Get(FVector2D(x, y - 1)) == EDungeonType::VE_Door)
-		return true;
+	if (y - 1 > 0)
+		outArroundTypeList.push_back(Dungon->Get(FVector2D(x, y - 1)));
 
-	if (x - 1 > 0 && Dungon->Get(FVector2D(x - 1, y)) == EDungeonType::VE_Door)
-		return true;
+	if (x - 1 > 0)
+		outArroundTypeList.push_back(Dungon->Get(FVector2D(x - 1, y)));
 
-	if (x + 1 < SizeX && Dungon->Get(FVector2D(x + 1, y)) == EDungeonType::VE_Door)
-		return true;
-
-	return false;
+	if (x + 1 < SizeX)
+		outArroundTypeList.push_back(Dungon->Get(FVector2D(x + 1, y)));
 }
 
 //2D AABB box 相交测试，如果相交返回true，如果没有返回false
@@ -408,8 +406,8 @@ int main()
 	srand(0);
 
 	//只能是奇数
-	const int SizeY = 81;
-	const int SizeX = 81;
+	const int SizeY = 189;
+	const int SizeX = 189;
 	FDungeon* Dungeon = new FDungeon(SizeX, SizeY, EDungeonType::VE_PassWay);
 	
 	//生成最边缘的墙体
@@ -718,7 +716,7 @@ int main()
 	}
 
 	//修剪支路死路
-	const int RoadCutDepth = 10;
+	const int RoadCutDepth = 20;
 	for (const vector<FVector2D>* road : *DeadEndRoadList)
 	{
 		for (int depth = 0; depth < RoadCutDepth; depth++)
@@ -726,11 +724,32 @@ int main()
 			if (depth < road->size())
 			{
 				const vector<FVector2D>& roaddata = *road;
+				vector<EDungeonType> outArroundTypeList;
+				FindDoorAround(roaddata[depth], Dungeon, outArroundTypeList);
 
 				//查看一下周围是不是有门，如果有的话就不能封路了
-				if (HaveFindDoorAround(roaddata[depth], Dungeon) == true)
+				bool bFindDoor = false;
+				//如果是岔路也不能封闭
+				int directionNum = 0;
+
+				for (const EDungeonType& type : outArroundTypeList)
+				{
+					if (type == EDungeonType::VE_Door)
+					{
+						bFindDoor = true;
+					}
+					if (type == EDungeonType::VE_PassWay)
+					{
+						directionNum++;
+					}
+				}
+
+				if (bFindDoor == true)
 					break;
 
+				if (directionNum >=2)
+					break;
+				
 				Dungeon->Data[roaddata[depth].X][roaddata[depth].Y] = EDungeonType::VE_Wall;
 			}
 		}
